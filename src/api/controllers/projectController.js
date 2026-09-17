@@ -10,6 +10,12 @@ export function projectController(projects, events) {
       res.status(created ? 201 : 200).json(projects.describeProject(project));
     },
 
+    async upload(req, res) {
+      const { project } = await projects.addUploadedProject(req.body ?? {});
+      projects.activate(project.id);
+      res.status(201).json(projects.describeProject(project));
+    },
+
     async remove(req, res) {
       await projects.removeProject(req.params.projectId);
       res.status(204).end();
@@ -22,7 +28,8 @@ export function projectController(projects, events) {
       res.json({
         projectId: project.id,
         project: snapshot.projectName,
-        path: project.path,
+        path: description.path,
+        source: description.source,
         ...snapshot.summary,
         scanId: snapshot.id,
         lastScan: snapshot.completedAt,

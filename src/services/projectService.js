@@ -1,5 +1,6 @@
 import path from "node:path";
 import { randomUUID } from "node:crypto";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import { watchProject } from "../watcher.js";
 import { scanProject, assertScannableProject, diffScans } from "./scanService.js";
 import {
@@ -30,6 +31,16 @@ export class ConflictError extends Error {
 
 function slugify(value) {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "project";
+}
+
+function parseJsonInput(value, field) {
+  if (value && typeof value === "object") return value;
+  if (typeof value !== "string" || !value.trim()) throw new ValidationError(`${field} is required`);
+  try {
+    return JSON.parse(value);
+  } catch {
+    throw new ValidationError(`${field} is not valid JSON`);
+  }
 }
 
 export function summarizeSnapshot(snapshot) {
@@ -97,11 +108,13 @@ export class ProjectService {
 
   describeProject(project) {
     const st = this.stateFor(project.id);
+    const uploaded = project.source === "upload";
     return {
       id: project.id,
       name: st.latest?.projectName ?? project.name,
-      path: project.path,
-      status: st.watcherStatus,
+      path: uploaded ? null : project.path,
+      source: project.source ?? "local",
+      status: uploaded ? "uploaded" : st.watcherStatus,
       scanStatus: st.inFlight ? "scanning" : st.lastError ? "failed" : st.latest ? "idle" : "pending",
       lastScan: st.latest?.completedAt ?? null,
       lastError: st.lastError,
@@ -127,24 +140,62 @@ export class ProjectService {
     let id = base;
     for (let n = 2; this.projects.has(id); n++) id = `${base}-${n}`;
 
-    const project = { id, name: path.basename(absolute), path: absolute, createdAt: new Date().toISOString() };
+    const project = {
+      id,
+      name: path.basename(absolute),
+      path: absolute,
+      source: "local",
+      createdAt: new Date().toISOString(),
+    };
     this.projects.set(id, project);
     await this.store.saveProjects([...this.projects.values()]);
-    this.events.publish(id, "project-added", { path: absolute });
+    this.events.publish(id, "project-added", { path: absolute, source: "local" });
+    return { project, created: true };
+  }
+
+  /**
+   * Registers a lockfile uploaded from the browser. The files are written to a
+   * private workspace under the data dir; the project is scanned but never watched.
+   */
+  async addUploadedProject({ name, packageJson, packageLock } = {}) {
+    const lock = parseJsonInput(packageLock, "packageLock");
+    if (!lock.packages || typeof lock.packages !== "object") {
+      throw new ValidationError("packageLock must be an npm package-lock.json v2 or v3 (it needs a 'packages' map)");
+    }
+    const manifest = packageJson
+      ? parseJsonInput(packageJson, "packageJson")
+      : { name: lock.name, dependencies: lock.packages[""]?.dependencies ?? {} };
+
+    const displayName = String(name || manifest.name || lock.name || "uploaded-project").slice(0, 80);
+    const base = slugify(displayName);
+    let id = base;
+    for (let n = 2; this.projects.has(id); n++) id = `${base}-${n}`;
+
+    const dir = path.join(this.store.dataDir, "uploads", id);
+    await mkdir(dir, { recursive: true });
+    await writeFile(path.join(dir, "package-lock.json"), JSON.stringify(lock));
+    await writeFile(path.join(dir, "package.json"), JSON.stringify(manifest));
+
+    const project = { id, name: displayName, path: dir, source: "upload", createdAt: new Date().toISOString() };
+    this.projects.set(id, project);
+    await this.store.saveProjects([...this.projects.values()]);
+    this.events.publish(id, "project-added", { name: displayName, source: "upload" });
     return { project, created: true };
   }
 
   async removeProject(projectId) {
-    this.getProject(projectId);
+    const project = this.getProject(projectId);
     await this.stopWatching(projectId);
     this.projects.delete(projectId);
     this.state.delete(projectId);
     await this.store.saveProjects([...this.projects.values()]);
+    if (project.source === "upload") await rm(project.path, { recursive: true, force: true });
   }
 
-  /** Starts watching and kicks off a background scan. */
+  /** Starts watching (local projects only) and kicks off a background scan. */
   activate(projectId) {
-    if (this.watch) this.startWatching(projectId);
+    const project = this.getProject(projectId);
+    if (this.watch && project.source !== "upload") this.startWatching(projectId);
     this.requestScan(projectId, "startup").catch(() => {});
   }
 

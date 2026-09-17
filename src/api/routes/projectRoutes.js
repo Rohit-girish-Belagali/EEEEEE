@@ -5,6 +5,7 @@ export function projectRoutes(controller) {
   const router = Router();
   router.get("/", h(controller.list));
   router.post("/", h(controller.create));
+  router.post("/upload", h(controller.upload));
   router.delete("/:projectId", h(controller.remove));
   router.get("/:projectId/overview", h(controller.overview));
   router.get("/:projectId/scans", h(controller.scans));

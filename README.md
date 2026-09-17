@@ -122,7 +122,8 @@ All project routes are under `/api/projects/:projectId`. The project id is the f
 | Method | Path | Purpose |
 |---|---|---|
 | GET | `/api/projects` | Registered projects with watcher and scan status |
-| POST | `/api/projects` | Add a project: `{ "path": "/abs/path" }` |
+| POST | `/api/projects` | Watch a local folder: `{ "path": "/abs/path" }` |
+| POST | `/api/projects/upload` | Scan an uploaded lockfile once (no watching): `{ "name", "packageLock", "packageJson" }` as JSON strings or objects |
 | DELETE | `/api/projects/:projectId` | Stop watching and remove a project |
 | GET | `…/overview` | Dashboard summary: risk score, dependency and vulnerability counts, risk distribution, agent status |
 | GET | `…/scans` | Scan history (for risk trends) |

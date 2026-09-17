@@ -2,7 +2,8 @@ import test, { after, before } from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
 import os from "node:os";
-import { mkdtemp, rm } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { startServer } from "../src/api/server.js";
 
@@ -142,6 +143,35 @@ test("simulate, inspect and mitigate", async () => {
 
   const stored = await api("GET", `/projects/demo-project/simulations/${simulationId}`);
   assert.equal(stored.body.mitigations.length, 1);
+});
+
+test("uploaded lockfile is scanned but not watched, and cleaned up on delete", async () => {
+  const packageLock = await readFile(path.join(FIXTURE, "package-lock.json"), "utf-8");
+  const packageJson = await readFile(path.join(FIXTURE, "package.json"), "utf-8");
+
+  const created = await api("POST", "/projects/upload", { name: "Uploaded Demo", packageLock, packageJson });
+  assert.equal(created.status, 201);
+  assert.equal(created.body.id, "uploaded-demo");
+  assert.equal(created.body.source, "upload");
+  assert.equal(created.body.status, "uploaded");
+  assert.equal(created.body.path, null);
+
+  await ctx.projects.getSnapshot("uploaded-demo");
+  const overview = await api("GET", "/projects/uploaded-demo/overview");
+  assert.equal(overview.body.agentStatus, "inactive");
+  assert.equal(overview.body.knownVulnerabilities, 1);
+
+  const workspace = path.join(dataDir, "uploads", "uploaded-demo");
+  assert.equal(existsSync(path.join(workspace, "package-lock.json")), true);
+  assert.equal((await api("DELETE", "/projects/uploaded-demo")).status, 204);
+  assert.equal(existsSync(workspace), false);
+
+  const lockOnly = await api("POST", "/projects/upload", { packageLock });
+  assert.equal(lockOnly.status, 201);
+  assert.equal(lockOnly.body.id, "demo-project-2");
+
+  assert.equal((await api("POST", "/projects/upload", { packageLock: "{nope" })).status, 400);
+  assert.equal((await api("POST", "/projects/upload", { packageLock: { lockfileVersion: 1 } })).status, 400);
 });
 
 test("validation errors return 4xx with a message", async () => {

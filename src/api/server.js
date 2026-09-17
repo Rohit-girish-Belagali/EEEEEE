@@ -35,7 +35,8 @@ function cors(allowedOrigins) {
 export function createApp({ projects, events, allowedOrigins = [] }) {
   const app = express();
   app.use(cors(allowedOrigins));
-  app.use(express.json({ limit: "100kb" }));
+  // Uploaded lockfiles for large projects run to several megabytes.
+  app.use(express.json({ limit: "10mb" }));
 
   app.get("/api/health", (req, res) => res.json({ status: "ok" }));
 

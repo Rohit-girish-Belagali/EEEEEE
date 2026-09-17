@@ -13,6 +13,7 @@ export class JsonStore {
   async init() {
     await mkdir(path.join(this.dataDir, "scans"), { recursive: true });
     await mkdir(path.join(this.dataDir, "simulations"), { recursive: true });
+    await mkdir(path.join(this.dataDir, "uploads"), { recursive: true });
   }
 
   async readJson(relPath, fallback) {
