@@ -87,8 +87,9 @@ export class AdvancedRiskEngine {
       this.beta * compromiseLikelihood +
       this.gamma * blastRadius;
 
-    // Scaling base risk by the uncertainty penalty BEFORE exponential saturation
-    // eliminates the artificial hard-cutoff cliff at 1.0 and preserves smooth ranking.
+    // Scale base risk by the uncertainty penalty BEFORE exponential saturation.
+    // This avoids a hard clamp cliff at 1.0 and preserves relative ranking
+    // between high-risk packages instead of flattening them to the same score.
     const effectiveRisk = baseRisk * uncertaintyPenalty;
     const finalScore = 1.0 - Math.exp(-effectiveRisk);
 
