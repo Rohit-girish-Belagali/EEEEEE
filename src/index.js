@@ -176,28 +176,32 @@ function printRiskAssessment(a, findings, simResult, graph) {
 
   // Ripple Simulation Report
   if (simResult && simResult.affectedNodes.length > 1) {
-    const rootName = graph.name ?? "(root)";
     console.log(`\n  🌊 Propagation Ripple Timeline:`);
-    for (const node of simResult.affectedNodes) {
-      const isInit = node.timeStep === 0;
-      const isRoot = node.nodeId === rootName || node.nodeId === "(root)";
-      const tag = isInit
-        ? " [INITIATING COMPROMISE]"
-        : isRoot
-        ? " [PRODUCTION APPLICATION REACHED]"
-        : "";
-      const indent = "    " + "  ".repeat(node.timeStep);
-      console.log(
-        `${indent}t=${node.timeStep}: ${node.nodeId} (Impact: ${node.impactScore}, Prob: ${(
-          node.infectionProbability * 100
-        ).toFixed(1)}%)${tag}`
-      );
-    }
+    printTimeline(simResult.affectedNodes, graph, "    ");
     if (simResult.criticalPath && simResult.criticalPath.length > 1) {
       console.log(`  Critical Impact Path: ${simResult.criticalPath.join(" ➔ ")}`);
     }
     console.log(
       `  Simulated Blast Radius: ${simResult.totalBlastRadius} (spreads across ${simResult.affectedNodes.length} nodes, depth ${simResult.maximumDepth})`
+    );
+  }
+}
+
+function printTimeline(affectedNodes, graph, baseIndent) {
+  const rootName = graph.name ?? "(root)";
+  for (const node of affectedNodes) {
+    const isRoot = node.nodeId === rootName || node.nodeId === "(root)";
+    const tag =
+      node.timeStep === 0
+        ? " [INITIATING COMPROMISE]"
+        : isRoot
+        ? " [PRODUCTION APPLICATION REACHED]"
+        : "";
+    const indent = baseIndent + "  ".repeat(node.timeStep);
+    console.log(
+      `${indent}t=${node.timeStep}: ${node.nodeId} (Impact: ${node.impactScore}, Prob: ${(
+        node.infectionProbability * 100
+      ).toFixed(1)}%)${tag}`
     );
   }
 }
@@ -212,23 +216,8 @@ function runManualSimulation(simulator, graph, pkgName, mitigatePkg) {
     initialProbability: 0.9,
   });
 
-  const rootName = graph.name ?? "(root)";
   console.log(`\n[Baseline Propagation Timeline]`);
-  for (const node of baseline.affectedNodes) {
-    const isInit = node.timeStep === 0;
-    const isRoot = node.nodeId === rootName || node.nodeId === "(root)";
-    const tag = isInit
-      ? " [INITIATING COMPROMISE]"
-      : isRoot
-      ? " [PRODUCTION APPLICATION REACHED]"
-      : "";
-    const indent = "  " + "  ".repeat(node.timeStep);
-    console.log(
-      `${indent}t=${node.timeStep}: ${node.nodeId} (Impact: ${node.impactScore}, Prob: ${(
-        node.infectionProbability * 100
-      ).toFixed(1)}%)${tag}`
-    );
-  }
+  printTimeline(baseline.affectedNodes, graph, "  ");
   console.log(`\nBaseline Blast Radius: ${baseline.totalBlastRadius}`);
   console.log(`Critical Path: ${baseline.criticalPath.join(" ➔ ")}`);
 
@@ -243,14 +232,7 @@ function runManualSimulation(simulator, graph, pkgName, mitigatePkg) {
     });
 
     console.log(`\n[Mitigated Propagation Timeline]`);
-    for (const node of mitigated.affectedNodes) {
-      const indent = "  " + "  ".repeat(node.timeStep);
-      console.log(
-        `${indent}t=${node.timeStep}: ${node.nodeId} (Impact: ${node.impactScore}, Prob: ${(
-          node.infectionProbability * 100
-        ).toFixed(1)}%)`
-      );
-    }
+    printTimeline(mitigated.affectedNodes, graph, "  ");
     console.log(`\nMitigated Blast Radius: ${mitigated.totalBlastRadius}`);
     const reduction =
       baseline.totalBlastRadius > 0

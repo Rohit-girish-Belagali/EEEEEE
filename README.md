@@ -17,6 +17,7 @@ Most dependency-scanning tools return an opaque "risk score" with no breakdown. 
    - **Blast radius** — how many packages/projects downstream would be affected, weighted by topological centrality
    - **Evidence confidence** — an uncertainty penalty applied when input data is incomplete
 5. **Explain** — every score ships with a bullet-point breakdown of exactly what drove it.
+6. **Simulate** — a ripple simulation models how a compromise of a package would spread up the reverse dependency graph, step by step, to the root application, and can test how much a mitigation (quarantining a package) reduces the blast radius.
 
 ## Project layout
 
@@ -27,9 +28,10 @@ src/
   osvCheck.js        OSV.dev + FIRST EPSS queries, CVSS v3.1 vector parsing
   deriveMetrics.js  translates graph/lockfile data into risk-engine inputs
   riskEngine.js      explainable multi-factor risk scoring engine
-  index.js           CLI entrypoint (watch mode + one-shot scan mode)
+  rippleSimulation.js time-step compromise propagation + mitigation simulation
+  index.js           CLI entrypoint (watch, one-shot scan, and simulation modes)
 fixtures/demo-project/  sample project used for local testing
-test/riskEngine.test.js automated tests for the risk engine
+test/                   automated tests for the risk engine and ripple simulation
 ```
 
 ## Usage
@@ -55,6 +57,34 @@ node src/index.js /path/to/your/project
 ```
 
 Leave it running; it re-scans automatically whenever dependencies change (e.g. after `npm install some-package`) and prints an alert for any newly introduced risk.
+
+Simulate a compromise of a package and test a mitigation:
+
+```bash
+node src/index.js ./fixtures/demo-project --once --simulate qs --mitigate express
+```
+
+```
+[Baseline Propagation Timeline]
+  t=0: qs (Impact: 0.225, Prob: 90.0%) [INITIATING COMPROMISE]
+    t=1: express (Impact: 0.1549, Prob: 60.8%)
+    t=1: body-parser (Impact: 0.0911, Prob: 60.8%)
+      t=2: demo-project (Impact: 0.4556, Prob: 45.6%) [PRODUCTION APPLICATION REACHED]
+
+Baseline Blast Radius: 0.6041
+Critical Path: qs ➔ express ➔ demo-project
+
+🛡️  Simulating Mitigation: Quarantining / Blocking 'express'
+
+[Mitigated Propagation Timeline]
+  t=0: qs (Impact: 0.225, Prob: 90.0%) [INITIATING COMPROMISE]
+    t=1: body-parser (Impact: 0.0911, Prob: 60.8%)
+
+Mitigated Blast Radius: 0.271
+Risk Reduction: 55.1% blast radius reduction achieved.
+```
+
+Pick the mitigation target along the critical path: blocking a package that isn't on every route to the app (e.g. `body-parser` here, since `express` also depends on `qs` directly) only gives a small reduction.
 
 Run the test suite:
 
@@ -85,4 +115,4 @@ npm test
 
 ## Status
 
-Working end-to-end against real npm projects with live OSV.dev / FIRST EPSS data. Not yet built: dependency-graph "ripple simulation" (blast-radius-on-compromise), a dashboard UI, and desktop notifications.
+Working end-to-end against real npm projects with live OSV.dev / FIRST EPSS data, including ripple simulation and mitigation testing. Not yet built: a dashboard UI and desktop notifications.
