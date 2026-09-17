@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 import express from "express";
+import path from "node:path";
+import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { JsonStore } from "../services/store.js";
 import { EventService } from "../services/eventService.js";
@@ -32,7 +34,13 @@ function cors(allowedOrigins) {
   };
 }
 
-export function createApp({ projects, events, allowedOrigins = [] }) {
+export const DASHBOARD_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../frontend/dist");
+
+export function dashboardBuilt(dir = DASHBOARD_DIR) {
+  return existsSync(path.join(dir, "index.html"));
+}
+
+export function createApp({ projects, events, allowedOrigins = [], dashboardDir = DASHBOARD_DIR }) {
   const app = express();
   app.use(cors(allowedOrigins));
   // Uploaded lockfiles for large projects run to several megabytes.
@@ -47,6 +55,12 @@ export function createApp({ projects, events, allowedOrigins = [] }) {
   app.use(`${base}/simulations`, simulationRoutes(simulationController(projects)));
 
   app.use("/api", (req, res) => res.status(404).json({ error: `No route for ${req.method} ${req.path}` }));
+
+  // Serve the built dashboard from the same origin; unknown paths fall back to the SPA.
+  if (dashboardBuilt(dashboardDir)) {
+    app.use(express.static(dashboardDir, { index: "index.html" }));
+    app.get(/^\/(?!api(\/|$)).*/, (req, res) => res.sendFile(path.join(dashboardDir, "index.html")));
+  }
 
   // eslint-disable-next-line no-unused-vars
   app.use((err, req, res, next) => {
@@ -89,7 +103,15 @@ export async function startServer({
     await projects.shutdown();
   };
 
-  return { server, app, projects, events, close, port: server.address().port };
+  return {
+    server,
+    app,
+    projects,
+    events,
+    close,
+    port: server.address().port,
+    dashboard: dashboardBuilt(),
+  };
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
@@ -102,6 +124,11 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   });
 
   console.log(`RippleGuard API listening on http://localhost:${port}/api`);
+  console.log(
+    dashboardBuilt()
+      ? `Dashboard: http://localhost:${port}/`
+      : "Dashboard not built (run `npm run build` once to serve it from here)"
+  );
   for (const p of projects.listProjects()) console.log(`  project '${p.id}' -> ${p.path} (${p.status})`);
 
   let closing = false;
