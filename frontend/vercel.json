@@ -1,1 +1,1 @@
-{ "rewrites": [{ "source": "/((?!pitch/|assets/).*)", "destination": "/index.html" }] }
+{ "rewrites": [{ "source": "/((?!assets/|pitch/[^/]+\\.[a-z]+$).*)", "destination": "/index.html" }] }
