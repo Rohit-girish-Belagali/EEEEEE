@@ -27,7 +27,7 @@ export default function Pitch() {
   const navigate = useNavigate()
   const i = Math.min(Math.max(Number(n) || 1, 1), SLIDES.length)
   const slide = SLIDES[i - 1]
-  const presenter = TEAM.find((m) => m.slides.includes(i))
+  const presenter = TEAM.find((m) => m.shots.some((s) => s.kind === 'slide' && s.n === i))
 
   useEffect(() => {
     const onKey = (e) => {
@@ -65,7 +65,7 @@ export default function Pitch() {
             <Link to={`/team/${presenter.slug}`} className="block border border-line bg-panel p-5 hover:border-muted">
               <p className="eyebrow">Presented by</p>
               <p className="mt-2 font-display text-2xl font-bold uppercase">{presenter.name}</p>
-              <p className="mt-1 text-sm text-muted">{presenter.role}</p>
+              <p className="mt-1 text-sm text-muted">{presenter.part} · {presenter.time}</p>
             </Link>
           )}
         </div>

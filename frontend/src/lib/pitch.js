@@ -8,10 +8,54 @@ export const SLIDES = [
   { title: 'Business strategy', points: ['Free CLI drives adoption. Team tier adds history, alerts and a GitHub Action CI gate. Enterprise adds SBOM import, SSO and on-prem.', 'Roadmap: PyPI and Maven in 3 months, CycloneDX SBOM in 6, policy engine in 12.', 'Scan the QR codes for the repo, live dashboard and demo video.'] },
 ]
 
+// Crop boxes are fractions of the 16:9 slide image: [x, y, width, height].
+const P = '/p/demo-project'
+
 export const TEAM = [
-  { slug: 'rohit', name: 'Rohit Girish Belagali', role: 'Opening, problem framing & live demo', slides: [1, 2], focus: 'Introduces Team Spectra and RippleGuard, sets up why the dependency tree is now the attack surface, and drives the live dashboard walkthrough.', demo: { to: '/p/demo-project', label: 'Overview' } },
-  { slug: 'shashank', name: 'Thambichetty Shashank', role: 'Solution & dependency graph', slides: [3], focus: 'Explains how RippleGuard models the ecosystem as a graph and walks the dependency graph view.', demo: { to: '/p/demo-project/dependencies', label: 'Dependency graph' } },
-  { slug: 'harshavardan', name: 'M Harshavardan', role: 'Risk engine & explainability', slides: [4], focus: 'Breaks down the four risk factors and shows the per-package "Why this score?" reasoning.', demo: { to: '/p/demo-project/vulnerabilities', label: 'Vulnerabilities' } },
-  { slug: 'tejasvi', name: 'Tejasvi M H', role: 'Ripple simulation & mitigation', slides: [5], focus: 'Runs the qs compromise simulation and compares quarantining express against body-parser.', demo: { to: '/p/demo-project/simulation', label: 'Ripple simulation' } },
-  { slug: 'varsha', name: 'Varsha K', role: 'Architecture, feasibility & business', slides: [6, 7], focus: 'Covers the architecture, what is built and tested, the go-to-market plan, and closes with the QR codes.', demo: null },
+  {
+    slug: 'tejasvi', name: 'Tejasvi M H', part: 'The hook', time: '0:00–0:24',
+    shots: [
+      { kind: 'slide', n: 2, label: 'Slide 2 · The problem', note: 'Land the 454,600 stat and the Shai-Hulud worm.' },
+      { kind: 'site', to: `${P}/vulnerabilities`, label: 'Website · Vulnerabilities', note: 'Scroll slowly so the long list of findings shows.' },
+      { kind: 'slide', n: 1, label: 'Slide 1 · RippleGuard title', note: 'Name the product and the team.' },
+      { kind: 'site', to: P, label: 'Website · Overview', note: 'Hold on the big red "EXPOSED." verdict.' },
+    ],
+  },
+  {
+    slug: 'shashank', name: 'Thambichetty Shashank', part: 'Target audience', time: '0:24–0:48',
+    shots: [
+      { kind: 'slide', n: 7, crop: [0.03, 0.645, 0.52, 0.125], label: 'Slide 7 · Who pays', note: 'JS/TS engineering teams, DevSecOps and AppSec, OSS maintainers.' },
+      { kind: 'terminal', label: 'Terminal · npm run demo', note: 'Run it, then open the dashboard link it prints.' },
+      { kind: 'site', to: '/add', label: 'Website · Add project', note: 'Show both ways in: Watch a folder and Check a lockfile.' },
+      { kind: 'slide', n: 7, crop: [0.03, 0.765, 0.52, 0.18], label: 'Slide 7 · Roadmap', note: 'npm now, PyPI and Maven next, SBOM and policy engine after.' },
+    ],
+  },
+  {
+    slug: 'harsha', name: 'M Harshavardan', part: 'Developer pain points', time: '0:48–1:12',
+    shots: [
+      { kind: 'site', to: `${P}/vulnerabilities`, label: 'Website · Vulnerabilities', note: 'Click "Why" on a qs row to open its reasons.' },
+      { kind: 'site', to: `${P}/simulation?package=qs`, label: 'Website · Simulation', note: 'Run qs. Wait for the red "REACHES YOUR APP."' },
+      { kind: 'slide', n: 5, crop: [0.595, 0.21, 0.375, 0.7], label: 'Slide 5 · −6.3% vs −55.1%', note: 'Blocking the wrong package barely helps. Blocking express cuts the blast radius by more than half.' },
+      { kind: 'site', to: `${P}/simulation?package=qs`, label: 'Website · Simulation', note: 'Run qs, then click Block express. Wait for the green "CONTAINED."' },
+    ],
+  },
+  {
+    slug: 'rohit', name: 'Rohit Girish Belagali', part: 'Technical advantage', time: '1:12–1:36',
+    shots: [
+      { kind: 'slide', n: 4, crop: [0.03, 0.2, 0.94, 0.17], label: 'Slide 4 · Risk engine formula', note: 'Exposure × compromise × blast radius, adjusted for confidence.' },
+      { kind: 'curve', label: 'Saturation curve · 1 − e⁻ˣ', note: 'The engine squashes raw risk with 1 − e⁻ˣ, so scores stay in 0–1 and never hit a hard clamp.' },
+      { kind: 'site', to: `${P}/dependencies?package=qs`, label: 'Website · Dependency graph', note: 'qs is selected, so its red path and detail panel show.' },
+    ],
+  },
+  {
+    slug: 'varsha', name: 'Varsha K', part: 'Business and roadmap', time: '1:36–2:00',
+    shots: [
+      { kind: 'slide', n: 7, crop: [0.03, 0.2, 0.52, 0.45], label: 'Slide 7 · Free / Team / Enterprise', note: 'Free drives adoption, Team is the CI wedge, Enterprise is the revenue.' },
+      { kind: 'slide', n: 7, crop: [0.03, 0.765, 0.52, 0.18], label: 'Slide 7 · Roadmap', note: 'Walk the four milestones left to right.' },
+      { kind: 'site', to: P, label: 'Website · Overview', note: 'Scroll to the live activity feed.' },
+      { kind: 'endcard', label: 'End card · GitHub', note: 'Close on the repo link.' },
+    ],
+  },
 ]
+
+export const GITHUB_URL = 'https://github.com/Rohit-girish-Belagali/Spectra'
