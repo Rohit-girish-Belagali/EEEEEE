@@ -22,7 +22,15 @@ export function LiveProvider({ projectId, children }) {
       })
       .catch(() => {})
 
-    const source = new EventSource(streamUrl(projectId))
+    const url = streamUrl(projectId)
+    if (!url) {
+      // Hosted demo: no backend stream, show the captured history as live.
+      setConnected(true)
+      return () => {
+        cancelled = true
+      }
+    }
+    const source = new EventSource(url)
     source.onopen = () => setConnected(true)
     source.onerror = () => setConnected(false)
     source.onmessage = (message) => {

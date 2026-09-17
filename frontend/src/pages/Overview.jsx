@@ -93,6 +93,9 @@ export default function Overview() {
   const [overview, setOverview] = useState(null)
   const [error, setError] = useState(null)
   const [scanning, setScanning] = useState(false)
+  const simulationLink = overview?.highestRiskPackage
+    ? `simulation?package=${encodeURIComponent(overview.highestRiskPackage)}`
+    : 'simulation'
 
   const load = useCallback(() => {
     return getOverview(projectId)
@@ -123,12 +126,12 @@ export default function Overview() {
   useEffect(() => {
     const onKey = (e) => {
       if (e.target.tagName === 'INPUT' || e.metaKey || e.ctrlKey || e.altKey) return
-      if (e.key === 's' || e.key === 'S') navigate('simulation')
+      if (e.key === 's' || e.key === 'S') navigate(simulationLink)
       if (e.key === 'r' || e.key === 'R') rescan()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [navigate, rescan])
+  }, [navigate, rescan, simulationLink])
 
   if (error && !overview) {
     return (
@@ -184,7 +187,7 @@ export default function Overview() {
 
             <div className="mt-10 flex flex-wrap gap-3">
               <Link
-                to="simulation"
+                to={simulationLink}
                 className="inline-flex h-12 items-center gap-3 bg-green px-6 font-display text-sm font-bold uppercase tracking-[0.14em] text-bg hover:brightness-110"
               >
                 Simulate a compromise

@@ -7,7 +7,11 @@ import Home from './pages/Home.jsx'
 import AddProject from './pages/AddProject.jsx'
 import Guide from './pages/Guide.jsx'
 import Overview from './pages/Overview.jsx'
-import Placeholder from './pages/Placeholder.jsx'
+import Dependencies from './pages/Dependencies.jsx'
+import Simulation from './pages/Simulation.jsx'
+import Vulnerabilities from './pages/Vulnerabilities.jsx'
+import Pitch from './pages/Pitch.jsx'
+import { TeamList, TeamMember } from './pages/Team.jsx'
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
@@ -15,12 +19,16 @@ createRoot(document.getElementById('root')).render(
       <Routes>
         <Route path="/" element={<Home />} />
         <Route path="/add" element={<AddProject />} />
+        <Route path="/pitch" element={<Navigate to="/pitch/1" replace />} />
+        <Route path="/pitch/:n" element={<Pitch />} />
+        <Route path="/team" element={<TeamList />} />
+        <Route path="/team/:slug" element={<TeamMember />} />
         <Route path="/guide" element={<Guide />} />
         <Route path="/p/:projectId" element={<Shell />}>
           <Route index element={<Overview />} />
-          <Route path="dependencies" element={<Placeholder title="Dependency graph" />} />
-          <Route path="vulnerabilities" element={<Placeholder title="Vulnerabilities" />} />
-          <Route path="simulation" element={<Placeholder title="Ripple simulation" />} />
+          <Route path="dependencies" element={<Dependencies />} />
+          <Route path="vulnerabilities" element={<Vulnerabilities />} />
+          <Route path="simulation" element={<Simulation />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

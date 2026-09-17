@@ -60,8 +60,11 @@ function Header({ projectId }) {
       </nav>
 
       <div className="ml-auto flex items-center gap-6 px-6 font-mono text-[11px] uppercase tracking-[0.16em]">
-        <Link to="/add" className="text-ink hover:text-green">
-          + Add project
+        <Link to="/pitch/1" className="text-ink hover:text-green">
+          Pitch
+        </Link>
+        <Link to="/team" className="text-ink hover:text-green">
+          Team
         </Link>
         <span className={connected ? 'text-green' : 'text-red'} role="status">
           <span aria-hidden="true">■ </span>
