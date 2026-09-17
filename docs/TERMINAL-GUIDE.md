@@ -10,7 +10,10 @@ You need Node.js 18 or newer. Check with `node -v`.
 git clone https://github.com/Rohit-girish-Belagali/Spectra.git
 cd Spectra
 npm install
+npm run build
 ```
+
+The last line builds the dashboard so the terminal can open it for you. It only needs to run once.
 
 ## 2. Pick a project to check
 
@@ -83,13 +86,15 @@ For each package with a known vulnerability you get a block like this:
 
 Packages with no known vulnerabilities are not printed.
 
-## 4. Keep watching a project
+## 4. Keep watching a project (and open the dashboard)
 
-Leave RippleGuard running and it rescans automatically whenever you add, update or remove a package:
+Run it without `--once` and RippleGuard becomes an agent: it scans, prints the report, keeps watching, and opens the dashboard in your browser at `http://localhost:4000`:
 
 ```bash
 node src/index.js /path/to/your/project
 ```
+
+The dashboard shows the same results with the dependency graph, the live activity feed, and the ripple simulation. Add `--no-open` if you don't want the browser to launch.
 
 Leave that terminal open. In a second terminal, change something in the project — for example:
 
@@ -98,7 +103,7 @@ cd /path/to/your/project
 npm install lodash@4.17.15
 ```
 
-Within a few seconds the first terminal prints `[Change detected]`, the packages that changed, and the risk report for any new problems. Press `Ctrl+C` to stop watching.
+Within a few seconds the first terminal prints `[Change detected]`, the packages that changed, and the risk report for any new problems — and the dashboard updates at the same moment. Press `Ctrl+C` to stop watching.
 
 ## 5. Ask "what if this package were compromised?"
 
@@ -136,10 +141,12 @@ npm test
 |---|---|
 | Scan a project once | `node src/index.js <folder> --once` |
 | Scan the demo project | `npm run scan` |
-| Watch a project continuously | `node src/index.js <folder>` |
+| Watch a project + open the dashboard | `node src/index.js <folder>` |
+| Same, without launching the browser | `node src/index.js <folder> --no-open` |
+| Watch the demo project | `npm run demo` |
 | Simulate a compromise | `node src/index.js <folder> --once --simulate <package>` |
 | Test a mitigation | `… --simulate <package> --mitigate <package>` |
-| Start the API + dashboard backend | `npm run server` |
+| Build the dashboard (once) | `npm run build` |
 | Run the tests | `npm test` |
 
 ## If something goes wrong
@@ -150,3 +157,5 @@ npm test
 | `Unsupported lockfile format` | The lockfile is from npm 6 or older. Run `npm install` with npm 7+ to upgrade it |
 | `OSV / Risk Engine check failed` | No internet connection, or the vulnerability database is temporarily unreachable. Try again |
 | Nothing prints after a change | Only `package.json` and `package-lock.json` are watched. Edits elsewhere do not trigger a scan |
+| `dashboard not built yet` | Run `npm run build` once in the Spectra folder, then start again |
+| `Port 4000 is in use, picking a free one` | Something else uses port 4000; the terminal prints the address that was used instead |

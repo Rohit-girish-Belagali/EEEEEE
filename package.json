@@ -8,6 +8,7 @@
   },
   "scripts": {
     "start": "node src/index.js",
+    "demo": "node src/index.js fixtures/demo-project",
     "scan": "node src/index.js fixtures/demo-project --once",
     "server": "node src/api/server.js fixtures/demo-project",
     "build": "npm install --prefix frontend && npm run build --prefix frontend",

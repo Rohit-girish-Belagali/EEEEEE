@@ -1,15 +1,17 @@
 #!/usr/bin/env node
 import path from "node:path";
-import { watchProject } from "./watcher.js";
+import { spawn } from "node:child_process";
 import {
   scanProject,
   assertScannableProject,
   diffScans,
   defaultInitialProbability,
 } from "./services/scanService.js";
+import { startServer } from "./api/server.js";
 
 const args = process.argv.slice(2);
 const onceFlag = args.includes("--once");
+const noOpen = args.includes("--no-open");
 const targetArg = args.find((arg) => !arg.startsWith("--"));
 
 // Optional simulation flags: --simulate <pkg> --mitigate <pkg>
@@ -39,20 +41,8 @@ console.log(`Target: ${projectDir}`);
 
 let previousScan = null;
 
-async function scan(label = "Initial scan") {
-  let result;
-  try {
-    result = await scanProject(projectDir);
-  } catch (err) {
-    console.error(`OSV / Risk Engine check failed: ${err.message}`);
-    return;
-  }
-
-  if (targetSimulatePkg) {
-    runManualSimulation(result.simulator, result.graph, targetSimulatePkg, targetMitigatePkg);
-    return;
-  }
-
+/** Prints what changed since the previous report and the risk of every changed vulnerable package. */
+function report(result, label) {
   const diff = diffScans(previousScan, result);
   previousScan = result;
 
@@ -116,7 +106,6 @@ function printRiskAssessment(a, findings, simResult, graph) {
     console.log(`  - ${reason}`);
   }
 
-  // Ripple Simulation Report
   if (simResult && simResult.affectedNodes.length > 1) {
     console.log(`\n  🌊 Propagation Ripple Timeline:`);
     printTimeline(simResult.affectedNodes, graph, "    ");
@@ -188,11 +177,82 @@ function runManualSimulation(simulator, graph, pkgName, mitigatePkg) {
   }
 }
 
-await scan();
+function openInBrowser(url) {
+  const [cmd, cmdArgs] =
+    process.platform === "darwin"
+      ? ["open", [url]]
+      : process.platform === "win32"
+      ? ["cmd", ["/c", "start", "", url]]
+      : ["xdg-open", [url]];
+  try {
+    spawn(cmd, cmdArgs, { stdio: "ignore", detached: true }).on("error", () => {}).unref();
+  } catch {
+    // Browser launch is a convenience only.
+  }
+}
 
-if (!onceFlag && !targetSimulatePkg) {
-  watchProject(projectDir, async () => {
-    await scan("Change detected");
+/** Binds to the preferred port, or a free one if it's already taken. */
+async function startDashboardServer() {
+  const preferred = Number(process.env.PORT ?? 4000);
+  try {
+    return await startServer({ projectPaths: [projectDir], port: preferred });
+  } catch (err) {
+    if (err.code !== "EADDRINUSE") throw err;
+    console.log(`Port ${preferred} is in use, picking a free one.`);
+    return startServer({ projectPaths: [projectDir], port: 0 });
+  }
+}
+
+// --- One-shot modes: scan (or simulate) in this process, print, exit. ---
+if (onceFlag || targetSimulatePkg) {
+  let result;
+  try {
+    result = await scanProject(projectDir);
+  } catch (err) {
+    console.error(`OSV / Risk Engine check failed: ${err.message}`);
+    process.exit(1);
+  }
+  if (targetSimulatePkg) {
+    runManualSimulation(result.simulator, result.graph, targetSimulatePkg, targetMitigatePkg);
+  } else {
+    report(result, "Initial scan");
+  }
+  process.exit(0);
+}
+
+// --- Agent mode: the API server scans and watches; this process reports and opens the dashboard. ---
+const { port, projects, events, dashboard, close } = await startDashboardServer();
+const projectId = projects.listProjects()[0].id;
+
+try {
+  report(await projects.getLiveScan(projectId), "Initial scan");
+} catch (err) {
+  console.error(`OSV / Risk Engine check failed: ${err.message}`);
+}
+
+events.subscribe(projectId, (event) => {
+  if (event.type === "scan-completed" && event.data.trigger !== "startup") {
+    projects.getLiveScan(projectId).then((live) => report(live, "Change detected")).catch(() => {});
+  } else if (event.type === "scan-failed") {
+    console.error(`\nScan failed: ${event.data.message}`);
+  }
+});
+
+const url = `http://localhost:${port}/p/${projectId}`;
+if (dashboard) {
+  console.log(`\nDashboard: ${url}`);
+  if (!noOpen) openInBrowser(url);
+} else {
+  console.log(`\nAPI: http://localhost:${port}/api  (dashboard not built yet — run \`npm run build\` once to open it here)`);
+}
+console.log("RippleGuard is watching for dependency modifications. Press Ctrl+C to stop.");
+
+let closing = false;
+for (const signal of ["SIGINT", "SIGTERM"]) {
+  process.on(signal, async () => {
+    if (closing) return;
+    closing = true;
+    await close();
+    process.exit(0);
   });
-  console.log("\nRippleGuard is watching for dependency modifications. Press Ctrl+C to stop.");
 }

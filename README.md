@@ -63,13 +63,14 @@ npm run scan
 node src/index.js ./fixtures/demo-project --once
 ```
 
-Run in continuous watch mode against any project with a `package-lock.json`:
+Run as an agent against any project with a `package-lock.json` — it scans, prints the report, keeps watching, and opens the dashboard in your browser:
 
 ```bash
+npm run build          # once: builds the dashboard into frontend/dist
 node src/index.js /path/to/your/project
 ```
 
-Leave it running; it re-scans automatically whenever dependencies change (e.g. after `npm install some-package`) and prints an alert for any newly introduced risk.
+Leave it running; it re-scans automatically whenever dependencies change (e.g. after `npm install some-package`), prints the new risk in the terminal, and the dashboard updates live. Add `--no-open` to skip launching the browser. If the dashboard isn't built, the API still runs and the terminal tells you.
 
 Simulate a compromise of a package and test a mitigation:
 
@@ -166,11 +167,23 @@ source.onmessage = (message) => {
 
 Browsers reconnect automatically and send `Last-Event-ID`; the server replays any events missed in between.
 
+## Dashboard
+
+```bash
+npm run build                       # once: build the dashboard
+npm run demo                        # scan + watch fixtures/demo-project, open http://localhost:4000
+```
+
+The built dashboard is served by the API server itself, so one process is enough. For frontend development, run `npm run server` (API on :4000) and `npm run dev --prefix frontend` (Vite on :5173 with hot reload, proxying `/api`). **+ Add project** in the header offers two ways in:
+
+- **Watch a folder** — paste the path of a project on the same machine as the server. It is watched and rescanned live on every dependency change.
+- **Check a lockfile** — choose a project folder or drop its `package-lock.json`; the browser reads only that file (plus `package.json` if present) and uploads it for a one-off scan. This works on a hosted deployment too, where the server has no access to your disk.
+
 ## Demo script
 
 Uses the bundled fixture (`express@4.17.1`, no `lodash`). The numbers below are what the tool actually produces for this project.
 
-1. `npm run server`, then open the dashboard: **49 dependencies**, **14 known vulnerabilities** across **7 packages**, overall risk **76 (high)** led by `qs`.
+1. `npm run demo` — the terminal prints the scan and the dashboard opens: **49 dependencies**, **14 known vulnerabilities** across **7 packages**, overall risk **76 (high)** led by `qs`.
 2. Open the dependency graph and select `qs`. Its path to the application is `qs → express → demo-project`.
 3. Open `qs` details: CVSS, EPSS, trust and mutability signals, centrality, downstream reach, and the "why this score" reasons.
 4. Run a ripple simulation from `qs`: qs 90% → express and body-parser 60.8% → **demo-project 45.6%**, blast radius **60.4%**.
