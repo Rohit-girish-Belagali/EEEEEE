@@ -4,6 +4,7 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import './index.css'
 import Shell from './components/Shell.jsx'
 import Home from './pages/Home.jsx'
+import AddProject from './pages/AddProject.jsx'
 import Overview from './pages/Overview.jsx'
 import Placeholder from './pages/Placeholder.jsx'
 
@@ -12,6 +13,7 @@ createRoot(document.getElementById('root')).render(
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<Home />} />
+        <Route path="/add" element={<AddProject />} />
         <Route path="/p/:projectId" element={<Shell />}>
           <Route index element={<Overview />} />
           <Route path="dependencies" element={<Placeholder title="Dependency graph" />} />

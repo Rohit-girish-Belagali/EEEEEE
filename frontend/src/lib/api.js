@@ -21,6 +21,8 @@ const post = (path, body) =>
   })
 
 export const getProjects = () => request('/projects')
+export const addProject = (path) => post('/projects', { path })
+export const uploadProject = (body) => post('/projects/upload', body)
 export const getOverview = (id) => request(`/projects/${id}/overview`)
 export const getEvents = (id, limit = 80) => request(`/projects/${id}/events?limit=${limit}`)
 export const getDependencies = (id) => request(`/projects/${id}/dependencies`)

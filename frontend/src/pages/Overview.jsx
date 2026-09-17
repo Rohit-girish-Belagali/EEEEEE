@@ -154,9 +154,10 @@ export default function Overview() {
 
   const verdict = verdictFor(overview, scanning)
   const tone = TONE[verdict.tone]
-  const pathParts = overview.path.split('/')
+  const uploaded = overview.source === 'upload'
+  const pathParts = (overview.path ?? overview.project).split('/')
   const folder = pathParts.pop()
-  const parent = pathParts.join('/') + '/'
+  const parent = pathParts.length ? pathParts.join('/') + '/' : ''
   const riskTone = LEVEL_TONE[overview.riskLevel] ?? 'muted'
   const watching = overview.agentStatus === 'active'
   const dist = overview.riskDistribution
@@ -209,7 +210,7 @@ export default function Overview() {
 
           <div className="lg:pt-2">
             <p className="eyebrow flex items-center gap-4">
-              Project under watch
+              {uploaded ? 'Uploaded lockfile' : 'Project under watch'}
               <span aria-hidden="true" className="h-px flex-1 bg-line" />
             </p>
             <p className="mt-5 break-all font-mono text-xl leading-snug md:text-2xl">
@@ -218,10 +219,12 @@ export default function Overview() {
             </p>
 
             <div className="mt-6">
-              <Row marker={watching ? 'bg-green' : 'bg-red'} label="Watcher">
-                {watching
-                  ? 'Active — rescans when package.json or package-lock.json change'
-                  : 'Stopped — changes on disk are not being picked up'}
+              <Row marker={uploaded ? 'border border-muted' : watching ? 'bg-green' : 'bg-red'} label="Watcher">
+                {uploaded
+                  ? 'Not watching — this is a one-off scan of an uploaded lockfile. Upload again to check a newer version.'
+                  : watching
+                    ? 'Active — rescans when package.json or package-lock.json change'
+                    : 'Stopped — changes on disk are not being picked up'}
               </Row>
               <Row marker="border border-muted" label="Last scan">
                 {timeAgo(overview.lastScan)} · took {duration(overview.scanDurationMs)}
