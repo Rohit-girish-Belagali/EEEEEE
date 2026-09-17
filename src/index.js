@@ -1,17 +1,12 @@
 #!/usr/bin/env node
 import path from "node:path";
-import { existsSync } from "node:fs";
-import { readFile } from "node:fs/promises";
-import { parseLockfile, affectedBy } from "./parseLockfile.js";
-import { checkVulnerabilities } from "./osvCheck.js";
 import { watchProject } from "./watcher.js";
-import { deriveRiskInputs } from "./deriveMetrics.js";
-import { AdvancedRiskEngine } from "./riskEngine.js";
 import {
-  RippleSimulator,
-  buildDependencyNodesFromGraph,
-  buildPropagationEdgesFromGraph,
-} from "./rippleSimulation.js";
+  scanProject,
+  assertScannableProject,
+  diffScans,
+  defaultInitialProbability,
+} from "./services/scanService.js";
 
 const args = process.argv.slice(2);
 const onceFlag = args.includes("--once");
@@ -24,9 +19,6 @@ const mitIndex = args.indexOf("--mitigate");
 const targetMitigatePkg = mitIndex !== -1 && args[mitIndex + 1] ? args[mitIndex + 1] : null;
 
 const projectDir = path.resolve(targetArg ?? ".");
-const lockfilePath = path.join(projectDir, "package-lock.json");
-const manifestPath = path.join(projectDir, "package.json");
-const riskEngine = new AdvancedRiskEngine();
 
 const RISK_ICON = {
   Critical: "🔴",
@@ -35,117 +27,67 @@ const RISK_ICON = {
   Low: "🟢",
 };
 
-function isFloatingRange(range) {
-  if (!range) return false;
-  return /^[\^~*]|latest|>=?/.test(range.trim());
-}
-
-if (!existsSync(lockfilePath)) {
-  console.error(`No package-lock.json found in ${projectDir}`);
+try {
+  assertScannableProject(projectDir);
+} catch (err) {
+  console.error(err.message);
   process.exit(1);
 }
 
 console.log(`RippleGuard: Contextual Supply Chain Risk & Ripple Simulator`);
 console.log(`Target: ${projectDir}`);
 
-let knownVersions = new Map(); // name -> version, from the last scan
+let previousScan = null;
 
 async function scan(label = "Initial scan") {
-  const graph = await parseLockfile(lockfilePath);
-
-  let manifestDeps = {};
+  let result;
   try {
-    const manifest = JSON.parse(await readFile(manifestPath, "utf-8"));
-    manifestDeps = { ...(manifest.dependencies ?? {}), ...(manifest.devDependencies ?? {}) };
-  } catch {
-    // no package.json / unreadable
-  }
-
-  // Build simulator components from graph
-  const simNodes = buildDependencyNodesFromGraph(graph, manifestDeps);
-  const simEdges = buildPropagationEdgesFromGraph(graph);
-  const simulator = new RippleSimulator(simNodes, simEdges);
-
-  // If manual simulation requested via CLI
-  if (targetSimulatePkg) {
-    runManualSimulation(simulator, graph, targetSimulatePkg, targetMitigatePkg);
+    result = await scanProject(projectDir);
+  } catch (err) {
+    console.error(`OSV / Risk Engine check failed: ${err.message}`);
     return;
   }
 
-  const newVersions = new Map();
-  for (const [name, info] of graph.packages) newVersions.set(name, info.version);
-
-  const changed = [];
-  for (const [name, version] of newVersions) {
-    if (!knownVersions.has(name)) {
-      changed.push({ name, version, kind: "added" });
-    } else if (knownVersions.get(name) !== version) {
-      changed.push({ name, version, kind: "updated", from: knownVersions.get(name) });
-    }
+  if (targetSimulatePkg) {
+    runManualSimulation(result.simulator, result.graph, targetSimulatePkg, targetMitigatePkg);
+    return;
   }
 
-  console.log(`\n[${label}] ${graph.packages.size} packages analyzed in dependency graph`);
+  const diff = diffScans(previousScan, result);
+  previousScan = result;
 
-  if (changed.length > 0) {
-    if (label !== "Initial scan") {
-      console.log(`Changed packages (${changed.length}):`);
-      for (const c of changed) {
-        const detail = c.kind === "updated" ? `${c.from} -> ${c.version}` : c.version;
-        console.log(`  ${c.kind === "added" ? "+" : "~"} ${c.name}@${detail}`);
-      }
-    }
+  console.log(`\n[${label}] ${result.packages.length} packages analyzed in dependency graph`);
 
-    try {
-      const vulns = await checkVulnerabilities(
-        changed.map((c) => ({ name: c.name, version: c.version }))
-      );
-
-      let anyVulnFound = false;
-      const sortedChanged = [...changed].sort((a, b) => a.name.localeCompare(b.name));
-
-      for (const { name, version } of sortedChanged) {
-        const findings = vulns.get(name);
-        if (!findings || findings.length === 0) continue;
-        anyVulnFound = true;
-
-        const isDirect = Object.prototype.hasOwnProperty.call(manifestDeps, name);
-        const floating = isFloatingRange(manifestDeps[name]);
-
-        const inputs = deriveRiskInputs({
-          packageName: name,
-          version,
-          findings,
-          graph,
-          isFloatingRange: floating,
-          isDirect,
-        });
-
-        const assessment = riskEngine.assessPackage({
-          packageName: name,
-          version,
-          ...inputs,
-        });
-
-        // Run ripple simulation for this package
-        const simResult = simulator.simulate({
-          initialNode: name,
-          initialProbability: assessment.compromiseLikelihood > 0 ? assessment.compromiseLikelihood : 0.85,
-        });
-
-        printRiskAssessment(assessment, findings, simResult, graph);
-      }
-
-      if (!anyVulnFound) {
-        console.log("No known vulnerabilities found for scanned packages.");
-      }
-    } catch (err) {
-      console.error(`OSV / Risk Engine check failed: ${err.message}`);
-    }
-  } else if (label !== "Initial scan") {
-    console.log("No dependency changes detected.");
+  if (!diff.hasDependencyChanges) {
+    if (label !== "Initial scan") console.log("No dependency changes detected.");
+    return;
   }
 
-  knownVersions = newVersions;
+  if (label !== "Initial scan") {
+    const count = diff.added.length + diff.updated.length + diff.removed.length;
+    console.log(`Changed packages (${count}):`);
+    for (const p of diff.added) console.log(`  + ${p.name}@${p.version}`);
+    for (const p of diff.updated) console.log(`  ~ ${p.name}@${p.from} -> ${p.to}`);
+    for (const p of diff.removed) console.log(`  - ${p.name}@${p.version}`);
+  }
+
+  const changedNames = new Set([...diff.added, ...diff.updated].map((p) => p.name));
+  const vulnerable = result.packages.filter((p) => changedNames.has(p.name) && p.vulnerabilityIds.length);
+
+  for (const pkg of vulnerable) {
+    const findings = result.findings
+      .filter((f) => f.package === pkg.name)
+      .map((f) => ({ id: f.osvId, aliases: f.aliases }));
+    const simResult = result.simulator.simulate({
+      initialNode: pkg.name,
+      initialProbability: defaultInitialProbability(pkg),
+    });
+    printRiskAssessment(pkg.assessment, findings, simResult, result.graph);
+  }
+
+  if (vulnerable.length === 0) {
+    console.log("No known vulnerabilities found for scanned packages.");
+  }
 }
 
 function printRiskAssessment(a, findings, simResult, graph) {

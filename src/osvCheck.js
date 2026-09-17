@@ -140,6 +140,8 @@ async function fetchVulnSummary(id) {
       cvssScore,
       epssScore,
       aliases,
+      severity: data.database_specific?.severity?.toLowerCase?.() ?? null,
+      fixedVersionsByPackage: extractFixedVersions(data),
     };
     vulnCache.set(id, result);
     return result;
@@ -148,37 +150,58 @@ async function fetchVulnSummary(id) {
   }
 }
 
+function extractFixedVersions(vulnRecord) {
+  const fixed = {};
+  for (const affected of vulnRecord.affected ?? []) {
+    if (affected.package?.ecosystem !== "npm") continue;
+    const name = affected.package.name;
+    for (const range of affected.ranges ?? []) {
+      for (const event of range.events ?? []) {
+        if (event.fixed) (fixed[name] ??= []).push(event.fixed);
+      }
+    }
+  }
+  return fixed;
+}
+
+// OSV caps querybatch at 1000 queries per request.
+const OSV_BATCH_SIZE = 500;
+
 /**
  * Queries the OSV.dev API for known vulnerabilities affecting the given
  * { name, version } npm packages. Returns Map<name, vuln[]>.
  */
 export async function checkVulnerabilities(pkgs) {
-  if (pkgs.length === 0) return new Map();
-
-  const queries = pkgs.map(({ name, version }) => ({
-    package: { name, ecosystem: "npm" },
-    version,
-  }));
-
-  const res = await fetch(OSV_BATCH_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ queries }),
-  });
-
-  if (!res.ok) {
-    throw new Error(`OSV query failed: ${res.status} ${res.statusText}`);
-  }
-
-  const { results } = await res.json();
+  // A query without a version matches every advisory ever published for the package.
+  const versioned = pkgs.filter((p) => p.version);
   const findings = new Map();
 
-  for (let i = 0; i < pkgs.length; i++) {
-    const ids = (results[i]?.vulns ?? []).map((v) => v.id);
-    if (ids.length === 0) continue;
+  for (let start = 0; start < versioned.length; start += OSV_BATCH_SIZE) {
+    const batch = versioned.slice(start, start + OSV_BATCH_SIZE);
+    const queries = batch.map(({ name, version }) => ({
+      package: { name, ecosystem: "npm" },
+      version,
+    }));
 
-    const details = await Promise.all(ids.map((id) => fetchVulnSummary(id)));
-    findings.set(pkgs[i].name, details);
+    const res = await fetch(OSV_BATCH_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ queries }),
+    });
+
+    if (!res.ok) {
+      throw new Error(`OSV query failed: ${res.status} ${res.statusText}`);
+    }
+
+    const { results } = await res.json();
+
+    for (let i = 0; i < batch.length; i++) {
+      const ids = (results[i]?.vulns ?? []).map((v) => v.id);
+      if (ids.length === 0) continue;
+
+      const details = await Promise.all(ids.map((id) => fetchVulnSummary(id)));
+      findings.set(batch[i].name, details);
+    }
   }
 
   return findings;

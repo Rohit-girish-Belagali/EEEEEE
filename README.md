@@ -23,16 +23,27 @@ Most dependency-scanning tools return an opaque "risk score" with no breakdown. 
 
 ```
 src/
-  watcher.js        file watcher for package.json / package-lock.json
-  parseLockfile.js  builds the dependency graph from package-lock.json
-  osvCheck.js        OSV.dev + FIRST EPSS queries, CVSS v3.1 vector parsing
-  deriveMetrics.js  translates graph/lockfile data into risk-engine inputs
-  riskEngine.js      explainable multi-factor risk scoring engine
+  watcher.js          file watcher for package.json / package-lock.json
+  parseLockfile.js    builds the dependency graph from package-lock.json
+  osvCheck.js         OSV.dev + FIRST EPSS queries, CVSS v3.1 vector parsing, fix versions
+  deriveMetrics.js    translates graph/lockfile data into risk-engine inputs
+  riskEngine.js       explainable multi-factor risk scoring engine
   rippleSimulation.js time-step compromise propagation + mitigation simulation
-  index.js           CLI entrypoint (watch, one-shot scan, and simulation modes)
+  index.js            CLI entrypoint (watch, one-shot scan, and simulation modes)
+  services/
+    scanService.js       the full scan pipeline, shared by the CLI and the API
+    simulationService.js simulation requests, node inspection, mitigation comparison
+    projectService.js    projects, watchers, queued scans, scan diffs, events
+    eventService.js      activity log + live event bus
+    store.js             JSON persistence under data/
+  api/
+    server.js            Express app (REST + Server-Sent Events)
+    routes/, controllers/
 fixtures/demo-project/  sample project used for local testing
-test/                   automated tests for the risk engine and ripple simulation
+test/                   risk engine, ripple simulation and API tests
 ```
+
+The CLI, the API and the watcher all call the same `scanProject()` — there is no separate scanning or scoring logic for the API.
 
 ## Usage
 
@@ -92,6 +103,79 @@ Run the test suite:
 npm test
 ```
 
+## API server
+
+Start the backend for the dashboard (watches the demo project by default):
+
+```bash
+npm run server
+# or any projects:
+node src/api/server.js /path/to/project-a /path/to/project-b
+```
+
+It listens on `http://localhost:4000/api` (override with `PORT` / `HOST`; pass `--no-watch` to disable file watching). Scan history, simulations and the activity log are stored as JSON in `data/` (override with `RIPPLEGUARD_DATA_DIR`). The server binds to `127.0.0.1` and only accepts browser requests from `localhost` origins, because it reads local project folders; add other origins with `RIPPLEGUARD_CORS_ORIGINS`.
+
+### Endpoints
+
+All project routes are under `/api/projects/:projectId`. The project id is the folder name (e.g. `demo-project`).
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/projects` | Registered projects with watcher and scan status |
+| POST | `/api/projects` | Add a project: `{ "path": "/abs/path" }` |
+| DELETE | `/api/projects/:projectId` | Stop watching and remove a project |
+| GET | `…/overview` | Dashboard summary: risk score, dependency and vulnerability counts, risk distribution, agent status |
+| GET | `…/scans` | Scan history (for risk trends) |
+| POST | `…/scans` | Run a scan now |
+| GET | `…/dependencies` | All packages with risk score, direct/transitive, dependents/dependencies counts |
+| GET | `…/dependencies/graph` | `nodes` + `edges` (`source` depends on `target`) for React Flow / Cytoscape / D3 |
+| GET | `…/dependencies/:packageName` | Package detail: risk components, signals (CVSS, EPSS, trust, mutability, centrality), reasons, path to the application |
+| GET | `…/vulnerabilities` | Every finding with CVSS, EPSS, severity, fix versions, package risk and reasons |
+| POST | `…/simulations` | Run a ripple simulation: `{ "initialPackage": "qs", "initialProbability": 0.9, "maxSteps": 5 }` |
+| GET | `…/simulations` | Past simulations |
+| GET | `…/simulations/:simulationId` | Full simulation: nodes, events, critical path, mitigations |
+| GET | `…/simulations/:simulationId/nodes/:nodeId` | Inspect a node: probability, impact, criticality, centrality, propagation path |
+| POST | `…/simulations/:simulationId/mitigate` | Block packages: `{ "blockedPackage": "express" }` → before/after blast radius and reduction |
+| GET | `…/events` | Recent activity log |
+| GET | `…/events/stream` | Live Server-Sent Events |
+
+Errors return `{ "error": "message" }` with a 400, 404 or 409 status.
+
+### Live events
+
+`GET …/events/stream` is a Server-Sent Events stream. Each message is JSON with `id`, `projectId`, `type`, `timestamp` and `data`:
+
+| Type | When |
+|---|---|
+| `file-changed` | `package.json` / `package-lock.json` changed on disk |
+| `scan-started`, `scan-completed`, `scan-failed` | Scan lifecycle; `scan-completed` carries the new summary and change counts |
+| `dependencies-changed` | Packages added, updated or removed since the last scan |
+| `vulnerabilities-detected`, `vulnerabilities-resolved` | Findings that appeared or disappeared |
+| `simulation-completed`, `mitigation-completed` | Simulation results |
+
+```js
+const source = new EventSource("http://localhost:4000/api/projects/demo-project/events/stream");
+source.onmessage = (message) => {
+  const event = JSON.parse(message.data);
+  if (event.type === "scan-completed") refreshDashboard();
+};
+```
+
+Browsers reconnect automatically and send `Last-Event-ID`; the server replays any events missed in between.
+
+## Demo script
+
+Uses the bundled fixture (`express@4.17.1`, no `lodash`). The numbers below are what the tool actually produces for this project.
+
+1. `npm run server`, then open the dashboard: **49 dependencies**, **14 known vulnerabilities** across **7 packages**, overall risk **76 (high)** led by `qs`.
+2. Open the dependency graph and select `qs`. Its path to the application is `qs → express → demo-project`.
+3. Open `qs` details: CVSS, EPSS, trust and mutability signals, centrality, downstream reach, and the "why this score" reasons.
+4. Run a ripple simulation from `qs`: qs 90% → express and body-parser 60.8% → **demo-project 45.6%**, blast radius **60.4%**.
+5. Mitigate by blocking `express`: blast radius **60.4% → 27.1%**, a **55.1% reduction**, and the application is no longer reached.
+6. In a terminal, run `npm install lodash@4.17.15` inside `fixtures/demo-project`. The watcher rescans and the stream sends `dependencies-changed`, `vulnerabilities-detected` (6 lodash advisories) and `scan-completed`.
+
+Reset afterwards with `npm uninstall lodash` in the fixture.
+
 ## Example output
 
 ```
@@ -115,4 +199,4 @@ npm test
 
 ## Status
 
-Working end-to-end against real npm projects with live OSV.dev / FIRST EPSS data, including ripple simulation and mitigation testing. Not yet built: a dashboard UI and desktop notifications.
+Working end-to-end against real npm projects with live OSV.dev / FIRST EPSS data: CLI, REST API, live event stream, ripple simulation and mitigation. Not yet built: the dashboard frontend and desktop notifications.
