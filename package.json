@@ -1,0 +1,17 @@
+{
+  "name": "rippleguard",
+  "version": "0.1.0",
+  "description": "Background agent that watches dependency changes and reports supply-chain risk",
+  "type": "module",
+  "bin": {
+    "rippleguard": "./src/index.js"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "scan": "node src/index.js fixtures/demo-project --once",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "chokidar": "^3.6.0"
+  }
+}
