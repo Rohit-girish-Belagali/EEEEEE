@@ -51,6 +51,12 @@ function Header({ projectId }) {
             {label}
           </NavLink>
         ))}
+        <Link
+          to="/guide"
+          className="flex items-center border-r border-line px-5 font-mono text-[11px] uppercase tracking-[0.16em] text-muted transition-colors hover:text-ink"
+        >
+          Guide
+        </Link>
       </nav>
 
       <div className="ml-auto flex items-center gap-6 px-6 font-mono text-[11px] uppercase tracking-[0.16em]">

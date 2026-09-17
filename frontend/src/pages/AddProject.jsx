@@ -252,6 +252,14 @@ export default function AddProject() {
           <RippleMark />
           <span className="font-display text-sm font-bold tracking-[0.22em]">RIPPLEGUARD</span>
         </Link>
+        <nav className="ml-auto flex gap-6 font-mono text-[11px] uppercase tracking-[0.16em]">
+          <Link to="/" className="text-muted hover:text-ink">
+            Dashboard
+          </Link>
+          <Link to="/guide" className="text-muted hover:text-ink">
+            Guide
+          </Link>
+        </nav>
       </header>
       <section className="px-8 py-14">
         <p className="eyebrow">Add a project</p>
