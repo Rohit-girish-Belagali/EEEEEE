@@ -7,10 +7,21 @@ import { checkVulnerabilities } from "./osvCheck.js";
 import { watchProject } from "./watcher.js";
 import { deriveRiskInputs } from "./deriveMetrics.js";
 import { AdvancedRiskEngine } from "./riskEngine.js";
+import {
+  RippleSimulator,
+  buildDependencyNodesFromGraph,
+  buildPropagationEdgesFromGraph,
+} from "./rippleSimulation.js";
 
 const args = process.argv.slice(2);
 const onceFlag = args.includes("--once");
 const targetArg = args.find((arg) => !arg.startsWith("--"));
+
+// Optional simulation flags: --simulate <pkg> --mitigate <pkg>
+const simIndex = args.indexOf("--simulate");
+const targetSimulatePkg = simIndex !== -1 && args[simIndex + 1] ? args[simIndex + 1] : null;
+const mitIndex = args.indexOf("--mitigate");
+const targetMitigatePkg = mitIndex !== -1 && args[mitIndex + 1] ? args[mitIndex + 1] : null;
 
 const projectDir = path.resolve(targetArg ?? ".");
 const lockfilePath = path.join(projectDir, "package-lock.json");
@@ -34,13 +45,32 @@ if (!existsSync(lockfilePath)) {
   process.exit(1);
 }
 
-console.log(`RippleGuard: Contextual Supply Chain Risk Engine`);
+console.log(`RippleGuard: Contextual Supply Chain Risk & Ripple Simulator`);
 console.log(`Target: ${projectDir}`);
 
 let knownVersions = new Map(); // name -> version, from the last scan
 
 async function scan(label = "Initial scan") {
   const graph = await parseLockfile(lockfilePath);
+
+  let manifestDeps = {};
+  try {
+    const manifest = JSON.parse(await readFile(manifestPath, "utf-8"));
+    manifestDeps = { ...(manifest.dependencies ?? {}), ...(manifest.devDependencies ?? {}) };
+  } catch {
+    // no package.json / unreadable
+  }
+
+  // Build simulator components from graph
+  const simNodes = buildDependencyNodesFromGraph(graph, manifestDeps);
+  const simEdges = buildPropagationEdgesFromGraph(graph);
+  const simulator = new RippleSimulator(simNodes, simEdges);
+
+  // If manual simulation requested via CLI
+  if (targetSimulatePkg) {
+    runManualSimulation(simulator, graph, targetSimulatePkg, targetMitigatePkg);
+    return;
+  }
 
   const newVersions = new Map();
   for (const [name, info] of graph.packages) newVersions.set(name, info.version);
@@ -63,14 +93,6 @@ async function scan(label = "Initial scan") {
         const detail = c.kind === "updated" ? `${c.from} -> ${c.version}` : c.version;
         console.log(`  ${c.kind === "added" ? "+" : "~"} ${c.name}@${detail}`);
       }
-    }
-
-    let manifestDeps = {};
-    try {
-      const manifest = JSON.parse(await readFile(manifestPath, "utf-8"));
-      manifestDeps = { ...(manifest.dependencies ?? {}), ...(manifest.devDependencies ?? {}) };
-    } catch {
-      // no package.json / unreadable -> treat all changed packages as non-floating unknowns
     }
 
     try {
@@ -104,7 +126,13 @@ async function scan(label = "Initial scan") {
           ...inputs,
         });
 
-        printRiskAssessment(assessment, findings);
+        // Run ripple simulation for this package
+        const simResult = simulator.simulate({
+          initialNode: name,
+          initialProbability: assessment.compromiseLikelihood > 0 ? assessment.compromiseLikelihood : 0.85,
+        });
+
+        printRiskAssessment(assessment, findings, simResult, graph);
       }
 
       if (!anyVulnFound) {
@@ -120,7 +148,7 @@ async function scan(label = "Initial scan") {
   knownVersions = newVersions;
 }
 
-function printRiskAssessment(a, findings) {
+function printRiskAssessment(a, findings, simResult, graph) {
   const icon = RISK_ICON[a.riskLevel] ?? "⚠️";
   console.log(`\n--------------------------------------------------`);
   console.log(`${icon} Package: ${a.packageName}@${a.version}`);
@@ -140,15 +168,105 @@ function printRiskAssessment(a, findings) {
   console.log(`  Evidence confidence: ${a.confidenceScore}`);
   console.log(`  Final contextual risk: ${a.finalRiskScore}`);
   console.log(`  Risk level: ${a.riskLevel}`);
+
   console.log(`\n  Why this score?`);
   for (const reason of a.explanation) {
     console.log(`  - ${reason}`);
+  }
+
+  // Ripple Simulation Report
+  if (simResult && simResult.affectedNodes.length > 1) {
+    const rootName = graph.name ?? "(root)";
+    console.log(`\n  🌊 Propagation Ripple Timeline:`);
+    for (const node of simResult.affectedNodes) {
+      const isInit = node.timeStep === 0;
+      const isRoot = node.nodeId === rootName || node.nodeId === "(root)";
+      const tag = isInit
+        ? " [INITIATING COMPROMISE]"
+        : isRoot
+        ? " [PRODUCTION APPLICATION REACHED]"
+        : "";
+      const indent = "    " + "  ".repeat(node.timeStep);
+      console.log(
+        `${indent}t=${node.timeStep}: ${node.nodeId} (Impact: ${node.impactScore}, Prob: ${(
+          node.infectionProbability * 100
+        ).toFixed(1)}%)${tag}`
+      );
+    }
+    if (simResult.criticalPath && simResult.criticalPath.length > 1) {
+      console.log(`  Critical Impact Path: ${simResult.criticalPath.join(" ➔ ")}`);
+    }
+    console.log(
+      `  Simulated Blast Radius: ${simResult.totalBlastRadius} (spreads across ${simResult.affectedNodes.length} nodes, depth ${simResult.maximumDepth})`
+    );
+  }
+}
+
+function runManualSimulation(simulator, graph, pkgName, mitigatePkg) {
+  console.log(`\n==================================================`);
+  console.log(`🌊 Standalone Ripple Simulation: ${pkgName}`);
+  console.log(`==================================================`);
+
+  const baseline = simulator.simulate({
+    initialNode: pkgName,
+    initialProbability: 0.9,
+  });
+
+  const rootName = graph.name ?? "(root)";
+  console.log(`\n[Baseline Propagation Timeline]`);
+  for (const node of baseline.affectedNodes) {
+    const isInit = node.timeStep === 0;
+    const isRoot = node.nodeId === rootName || node.nodeId === "(root)";
+    const tag = isInit
+      ? " [INITIATING COMPROMISE]"
+      : isRoot
+      ? " [PRODUCTION APPLICATION REACHED]"
+      : "";
+    const indent = "  " + "  ".repeat(node.timeStep);
+    console.log(
+      `${indent}t=${node.timeStep}: ${node.nodeId} (Impact: ${node.impactScore}, Prob: ${(
+        node.infectionProbability * 100
+      ).toFixed(1)}%)${tag}`
+    );
+  }
+  console.log(`\nBaseline Blast Radius: ${baseline.totalBlastRadius}`);
+  console.log(`Critical Path: ${baseline.criticalPath.join(" ➔ ")}`);
+
+  if (mitigatePkg) {
+    console.log(`\n🛡️  Simulating Mitigation: Quarantining / Blocking '${mitigatePkg}'`);
+    const mitigated = simulator.simulate({
+      initialNode: pkgName,
+      initialProbability: 0.9,
+      mitigation: {
+        blockedNodes: [mitigatePkg],
+      },
+    });
+
+    console.log(`\n[Mitigated Propagation Timeline]`);
+    for (const node of mitigated.affectedNodes) {
+      const indent = "  " + "  ".repeat(node.timeStep);
+      console.log(
+        `${indent}t=${node.timeStep}: ${node.nodeId} (Impact: ${node.impactScore}, Prob: ${(
+          node.infectionProbability * 100
+        ).toFixed(1)}%)`
+      );
+    }
+    console.log(`\nMitigated Blast Radius: ${mitigated.totalBlastRadius}`);
+    const reduction =
+      baseline.totalBlastRadius > 0
+        ? (
+            ((baseline.totalBlastRadius - mitigated.totalBlastRadius) /
+              baseline.totalBlastRadius) *
+            100
+          ).toFixed(1)
+        : 0;
+    console.log(`Risk Reduction: ${reduction}% blast radius reduction achieved.`);
   }
 }
 
 await scan();
 
-if (!onceFlag) {
+if (!onceFlag && !targetSimulatePkg) {
   watchProject(projectDir, async () => {
     await scan("Change detected");
   });
