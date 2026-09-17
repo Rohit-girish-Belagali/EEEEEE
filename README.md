@@ -47,6 +47,8 @@ The CLI, the API and the watcher all call the same `scanProject()` — there is 
 
 ## Usage
 
+New here? Start with the plain-language **[terminal guide](docs/TERMINAL-GUIDE.md)**.
+
 Install dependencies:
 
 ```bash
